@@ -41,13 +41,22 @@ function M.bgcolor(delta, d2, d3)
 
   bg = string.sub(bg, 2)
   local bgi = tonumber(bg, 16)
+  local light = tonumber('a0a0a0', 16)
   if bgi == nil then
     return '#101b3f'
   end
-  if d2 == nil then
-    bgi = bgi + delta
+  if bgi > light then
+    if d2 == nil then
+      bgi = bgi - delta
+    else
+      bgi = bgi - delta * 65536 - d2 * 256 - (d3 or 16)
+    end
   else
-    bgi = bgi + delta * 65536 + d2 * 256 + d3
+    if d2 == nil then
+      bgi = bgi + delta
+    else
+      bgi = bgi + delta * 65536 + d2 * 256 + (d3 or 16)
+    end
   end
 
   log(string.format('#%06x', bgi))
@@ -69,7 +78,7 @@ local function diff_color(bgcolor, sel)
   return diff, t
 end
 
--- offset the GHListHl based on GHListDark
+-- offset the GuihuaListHl based on GuihuaListDark
 function M.selcolor(Hl)
   vim.validate({ Hl = { Hl, 'string' } })
   log(Hl)
@@ -79,10 +88,11 @@ function M.selcolor(Hl)
   local fg = tonumber(string.sub(vim.fn.synIDattr(vim.fn.synIDtrans(vim.fn.hlID('NormalFloat')), 'fg#'), 2), 16)
     or tonumber(string.sub(vim.fn.synIDattr(vim.fn.synIDtrans(vim.fn.hlID('Normal')), 'fg#'), 2), 16)
 
-  if vim.fn.hlexists('GHListHl') and vim.fn.synIDattr(vim.fn.synIDtrans(vim.fn.hlID('GHListHl')), 'bg#') ~= '' then
+  if vim.fn.hlexists('GuihuaListHl') == 1 and vim.fn.synIDattr(vim.fn.synIDtrans(vim.fn.hlID('GuihuaListHl')), 'bg#') ~= '' then
+    -- already defined
     return
   end
-  local bgcolor = tonumber(string.sub(vim.fn.synIDattr(vim.fn.synIDtrans(vim.fn.hlID('GHListDark')), 'bg#'), 2), 16)
+  local bgcolor = tonumber(string.sub(vim.fn.synIDattr(vim.fn.synIDtrans(vim.fn.hlID('GuihuaListDark')), 'bg#'), 2), 16)
     or bg
     or 0x303030
 
@@ -90,12 +100,13 @@ function M.selcolor(Hl)
   --   local sel = vim.fn.synIDattr(vim.fn.synIDtrans(vim.fn.hlID("PmenuSel")), "bg#") default
   local sel = vim.fn.synIDattr(vim.fn.synIDtrans(vim.fn.hlID(Hl)), 'bg#') or '#434550'
 
-  local selfgstr = vim.fn.synIDattr(vim.fn.synIDtrans(vim.fn.hlID(Hl)), 'fg#') or '#EFEFEF'
+  local sel_gstr = vim.fn.synIDattr(vim.fn.synIDtrans(vim.fn.hlID(Hl)), 'fg#') or '#EFEFEF'
 
-  log('sel, ', sel, selfgstr)
+  log('sel, ', sel, sel_gstr)
   sel = tonumber(string.sub(sel, 2), 16)
-  local selfg = tonumber(string.sub(selfgstr, 2), 16)
+  local selfg = tonumber(string.sub(sel_gstr, 2), 16)
   log(sel, selfg)
+  bg = bg or 0x303030
   if sel == nil then
     sel = 0x506b8f
     if bg > 0xa00000 then
@@ -119,9 +130,9 @@ function M.selcolor(Hl)
     local lbg = string.format('#%06x', sel)
     log(diff, sel, bgcolor, Hl)
 
-    local hi = [[hi default GHListHl cterm=Bold gui=Bold guibg=]] .. lbg
-    if vim.o.background == 'light' and selfgstr then
-      hi = hi .. ' guifg=' .. selfgstr
+    local hi = [[hi default GuihuaListHl cterm=Bold gui=Bold guibg=]] .. lbg
+    if vim.o.background == 'light' and sel_gstr then
+      hi = hi .. ' guifg=' .. sel_gstr
     end
 
     vim.cmd(hi)
@@ -135,25 +146,25 @@ function M.selcolor(Hl)
       sel = bgcolor + 0x23202a
     end
     local lbg = string.format('#%6x', sel)
-    vim.cmd('hi default GHListHl cterm=Bold gui=Bold guibg=' .. lbg)
+    vim.cmd('hi default GuihuaListHl cterm=Bold gui=Bold guibg=' .. lbg)
   end
 
-  return 'GHListHl'
+  return 'GuihuaListHl'
 end
 
-function M.close_view_event(mode, key, winnr, bufnr, enter)
+function M.close_view_event(_, key, winnr, bufnr, enter)
   if winnr == nil then
-    winnr = vim.api.nvim_get_current_win()
+    winnr = api.nvim_get_current_win()
   end
   if bufnr == nil then
-    bufnr = vim.api.nvim_get_current_buf()
+    bufnr = api.nvim_get_current_buf()
   end
   local closer = ' <Cmd> lua pcall(vim.api.nvim_win_close, ' .. winnr .. ', true) <CR>'
   enter = enter or false
 
   -- log ("!! closer", winnr, bufnr, enter)
   if enter then
-    vim.api.nvim_buf_set_keymap(bufnr, 'n', key, closer, {})
+    api.nvim_buf_set_keymap(bufnr, 'n', key, closer, {})
     -- cmd( mode .. "map <buffer> " .. key .. " <Cmd> lua pcall(vim.api.nvim_win_close, " .. winnr .. ", true) <CR>" )
   end
 end
@@ -269,17 +280,40 @@ function M.fzy_idx(data_list, pos)
   return data_list[pos]
 end
 
+M.split_str = function(str)
+  local lines = {}
+  for s in str:gmatch('[^\r\n]+') do
+    table.insert(lines, s)
+  end
+  return lines
+end
+
 M.open_file_at = function(filename, line, col, split)
   log('open ' .. filename)
+  local bufnr = vim.uri_to_bufnr(vim.uri_from_fname(filename))
+  if not api.nvim_buf_is_loaded(bufnr) then
+    vim.fn.bufload(bufnr)
+    vim.api.nvim_buf_attach(bufnr, true, {})
+  end
+
+  -- local bufname = vim.fn.bufname(filename)
   if split == nil then
     -- code
-    vim.cmd(string.format('e  %s', filename))
+    vim.cmd(string.format('drop  %s', filename))
   elseif split == 'v' then
-    vim.cmd(string.format('vsp! %s', filename))
+    if M.split_existed() then
+      vim.cmd(string.format('drop  %s', filename))
+    else
+      vim.cmd(string.format('vsp! %s', filename))
+    end
   elseif split == 's' then
-    vim.cmd(string.format('sp! %s', filename))
+    if M.split_existed() then
+      vim.cmd(string.format('drop  %s', filename))
+    else
+      vim.cmd(string.format('sp! %s', filename))
+    end
   end
-  vim.cmd([[e]]) -- force reload so on_attach will work
+  vim.cmd('doautocmd FileType')
   col = col or 1
   vim.fn.cursor(line, col)
   -- sometime highlight failed because lazyloading
@@ -317,11 +351,46 @@ M.map = function(modes, key, result, options)
 
   for i = 1, #modes do
     if buffer then
-      vim.api.nvim_buf_set_keymap(0, modes[i], key, result, options)
+      api.nvim_buf_set_keymap(0, modes[i], key, result, options)
     else
-      vim.api.nvim_set_keymap(modes[i], key, result, options)
+      api.nvim_set_keymap(modes[i], key, result, options)
     end
   end
 end
 
+-- if split existed, cursor will move to next split and return true
+M.split_existed = function()
+  local curNr = vim.fn.winnr()
+  vim.cmd('wincmd h')
+  if vim.fn.winnr() ~= curNr then
+    return true
+  end
+  vim.cmd('wincmd l')
+  if vim.fn.winnr() ~= curNr then
+    return true
+  end
+  return false
+end
+
+M.trim = function(s)
+  return s:match('^%s*(.-)%s*$')
+end
+
+-- remove duplicate element in a table
+M.dedup = function(list, key1, key2)
+  local map = {}
+  local result = {}
+  if key2 == nil then
+    key2 = key1
+  end
+
+  for i = 1, #list do
+    local item = list[i]
+    if map[item[key1] .. tostring(item[key2])] == nil then
+      map[item[key1] .. tostring(item[key2])] = true
+      table.insert(result, item)
+    end
+  end
+  return result
+end
 return M

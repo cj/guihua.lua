@@ -14,7 +14,8 @@ return {
     return row, col
   end,
   -- caller need to figure out y offset this function always return 0
-  offset_center = function(win_height, win_width)
+  -- offset_center = function(win_height, win_width)
+  offset_center = function(_, win_width)
     local width = vim.api.nvim_get_option("columns")
     local row = 0
     local col = math.ceil((width - win_width) / 2 - 1)
@@ -34,9 +35,12 @@ return {
     local col = math.ceil((width - win_width) / 3)
     return row, col
   end,
-  up_left = function(win_height, win_width)
+  up_left = function(_, _)
     return 5, 5
-  end
+  end,
+  none = function(_, _)
+    return 0, 0
+  end,
 
   --   cur_pos = function(win_height, win_width, x, y)
   --     x = x or 10

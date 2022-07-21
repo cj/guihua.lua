@@ -15,9 +15,11 @@ local default_config = {
   highlights = true,
   -- Should write to a file
   use_file = true,
+  log_file = 'gh',
   -- Any messages above this level will be logged.
   level = 'error',
   -- Level configuration
+  log_size = 10000000,
   modes = {
     { name = 'trace', hl = 'Comment' },
     { name = 'debug', hl = 'Comment' },
@@ -50,15 +52,18 @@ log.new = function(config, standalone)
   config = vim.tbl_deep_extend('force', default_config, config)
   -- path ~/.local/share/nvim
 
-  local cache_dir = vim.fn.stdpath('cache')
-  local outfile = string.format('%s%s%s.log', cache_dir, sep(), config.plugin or 'gh')
+  local cache_dir = vim.fn.stdpath('cache') -- ' stdpath('log') '
+  config.log_file = config.log_file or config.plugin or 'gh'
+  local outfile = string.format('%s%s%s.log', cache_dir, sep(), config.log_file)
 
-  local fp = io.open(outfile, 'r')
-  if fp then
-    local size = fp:seek('end')
-    fp:close()
-    if size > 1234567 then
-      os.remove(outfile)
+  if config.use_file then
+    local fp = io.open(outfile, 'r')
+    if fp then
+      local size = fp:seek('end')
+      fp:close()
+      if size > config.log_size then
+        os.remove(outfile)
+      end
     end
   end
 
@@ -107,11 +112,11 @@ log.new = function(config, standalone)
 
     local msg = message_maker(...)
     local info = debug.getinfo(2, 'Sl')
-    local lineinfo = info.short_src .. ':' .. info.currentline
+    local lineinfo = string.format('[%s]%s:%s', level, info.short_src, info.currentline)
 
     -- Output to console
     if config.use_console then
-      local console_string = string.format('[%-6s%s] %s: %s', nameupper, os.date('%H:%M:%S'), lineinfo, msg)
+      local console_string = string.format('[%-4s][%s] %s: %s', nameupper, os.date('%H:%M:%S'), lineinfo, msg)
 
       if config.highlights and level_config.hl then
         vim.cmd(string.format('echohl %s', level_config.hl))
@@ -131,10 +136,15 @@ log.new = function(config, standalone)
     if config.use_file then
       -- check file size
 
-      fp = io.open(outfile, 'a')
-      local str = string.format('[%-6s%s] %s: %s\n', nameupper, os.date(), lineinfo, msg)
-      fp:write(str)
-      fp:close()
+      local fp = io.open(outfile, 'a+')
+      local str = string.format('[%-4s][%s] %s: %s\n', nameupper, os.date(), lineinfo, msg)
+      if fp then
+        fp:write(str) -- return true if successful
+        fp:flush()
+        fp:close()
+      else
+        print('Could not open log file')
+      end
     end
   end
 
@@ -154,6 +164,10 @@ log.new = function(config, standalone)
         return string.format(fmt, unpack(inspected))
       end)
     end
+  end
+
+  obj.config = function()
+    return config
   end
   return obj
 end
@@ -192,6 +206,4 @@ log.new(default_config, true)
 
 -- local l = log.new ({level = "info"}, true)
 --
--- l.info("kkkk")
-
 return log

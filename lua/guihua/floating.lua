@@ -1,13 +1,16 @@
 local api = vim.api
 local location = require('guihua.location')
-local validate = vim.validate
-local utils = require('guihua.util')
+-- local validate = vim.validate
+-- local utils = require('guihua.util')
 local log = require('guihua.log').info
 local trace = require('guihua.log').trace
 local columns = api.nvim_get_option('columns')
 local lines = api.nvim_get_option('lines')
 local shell = api.nvim_get_option('shell')
 local shellcmdflag = api.nvim_get_option('shellcmdflag')
+if _GH_SETUP == nil then
+  require('guihua').setup()
+end
 
 -- Create a simple floating terminal.
 local function floating_buf(opts) -- win_width, win_height, x, y, loc, prompt, enter, ft)
@@ -18,14 +21,15 @@ local function floating_buf(opts) -- win_width, win_height, x, y, loc, prompt, e
   -- if opts.border == "single" then
   --   opts.border = {}
   -- end
-  log('loc', opts.loc, opts.win_width, opts.win_height, x, y, enter, opts.ft)
   -- win_w, win_h, x, y should be passwd in from view
   local loc = opts.loc or location.center
   local row, col = loc(opts.win_height, opts.win_width)
+
+  log('loc', opts.loc, opts.win_width, opts.win_height, x, y, enter, col, row, opts.ft)
   local win_opts = {
     style = opts.style or 'minimal',
     width = opts.win_width or 80,
-    height = opts.win_height or 20,
+    height = opts.win_height or 23,
     border = opts.border or 'single', -- "shadow"
   }
 
@@ -40,6 +44,11 @@ local function floating_buf(opts) -- win_width, win_height, x, y, loc, prompt, e
     win_opts.row = row + y
     win_opts.col = col + x
   end
+
+  if win_opts.relative == 'cursor' and y ~= 0 then
+    win_opts.row = y
+  end
+
   log('floating size', win_opts.height, win_opts.width)
   trace('floating opts: ', win_opts, opts)
   local buf = api.nvim_create_buf(false, true)
@@ -81,8 +90,8 @@ local function floating_buf_mask(transparency) -- win_width, win_height, x, y, l
   vim.validate({ transparency = { transparency, 'number' } })
   columns = api.nvim_get_option('columns')
   lines = api.nvim_get_option('lines')
-  local loc = location.center
-  local row, col = loc(lines, columns)
+  -- local loc = location.center
+  -- local row, col = loc(lines, columns)
   local win_opts = {
     style = 'minimal',
     relative = 'editor',
@@ -105,7 +114,7 @@ local function floating_buf_mask(transparency) -- win_width, win_height, x, y, l
 
   return buf,
     win,
-    function(...)
+    function()
       if win == nil then
         -- already closed or not valid
         return
@@ -154,19 +163,13 @@ end
 local function floating_term(opts) -- cmd, callback, win_width, win_height, x, y)
   local current_window = vim.api.nvim_get_current_win()
   opts.enter = opts.enter or true
-  -- opts.x = opts.x or 1
-  -- opts.y = opts.y or 1
 
   if opts.cmd == '' or opts.cmd == nil then
     opts.cmd = vim.api.nvim_get_option('shell')
   end
 
   -- get dimensions
-  -- local width = api.nvim_get_option("columns")
-  -- local height = api.nvim_get_option("lines")
-
   -- calculate our floating window size
-
   columns = api.nvim_get_option('columns')
   lines = api.nvim_get_option('lines')
   opts.win_height = opts.win_height or math.ceil(lines * 0.88)
@@ -175,7 +178,7 @@ local function floating_term(opts) -- cmd, callback, win_width, win_height, x, y
 
   api.nvim_win_set_option(win, 'winhl', 'Normal:Normal')
 
-  local closer = function(...)
+  local closer = function()
     log('floatwin closing ', win)
 
     if opts.autoclose ~= false then
@@ -202,23 +205,38 @@ local function floating_term(opts) -- cmd, callback, win_width, win_height, x, y
 
   vim.fn.termopen(args, {
     on_exit = function(_, _, _)
-      -- local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-      vim.api.nvim_set_current_win(current_window)
-      closer()
-      -- if callback then
-      --   callback(lines)
-      -- end
+      if opts.autoclose ~= false then
+        vim.api.nvim_set_current_win(current_window)
+        closer()
+      end
     end,
   })
 
-  vim.cmd('startinsert!')
+  if opts.autoclose ~= false then
+    vim.cmd('startinsert!')
+  end
+
   return buf, win, closer
 end
 
--- wraper for tui/gui
+local function close_float_terminal(name)
+  local cur_buf = api.nvim_get_current_buf()
+  local has_var, float_term_win = pcall(api.nvim_buf_get_var, cur_buf, name)
+  if not has_var then
+    return
+  end
+  if float_term_win[1] ~= nil and api.nvim_buf_is_valid(float_term_win[1]) then
+    api.nvim_buf_delete(float_term_win[1], { force = true })
+  end
+  if float_term_win[2] ~= nil and api.nvim_win_is_valid(float_term_win[2]) then
+    api.nvim_win_close(float_term_win[2], true)
+  end
+end
+
+-- wrapper for tui/gui
 local term = function(opts)
-  local columns = api.nvim_get_option('columns')
-  local lines = api.nvim_get_option('lines')
+  columns = api.nvim_get_option('columns')
+  lines = api.nvim_get_option('lines')
 
   local win_width, win_height
   if type(opts.vsplit) == 'boolean' and opts.vsplit == true then
@@ -245,7 +263,7 @@ local term = function(opts)
     opts.autoclose = true
   end
 
-  opts.closer = function(args)
+  opts.closer = function()
     log('closer callback')
     vim.cmd('set noconfirm')
     vim.cmd('bufdo e!')
@@ -254,11 +272,25 @@ local term = function(opts)
   opts.closer_args = {}
   local buf, win, closer = floating_term(opts)
   api.nvim_command('setlocal nobuflisted')
-  api.nvim_buf_set_var(buf, opts.term_name or 'guihua_floating_term', { buf, win })
-
+  local var_key = opts.term_name or 'guihua_floating_term'
+  api.nvim_buf_set_var(buf, var_key, { buf, win })
+  local m = _GH_SETUP.maps
+  local f = string.format('lua require("guihua.floating").close(%s)<CR>', var_key)
+  vim.api.nvim_buf_set_keymap(buf, 'n', m.close_view, f, {})
+  vim.api.nvim_buf_set_keymap(buf, 'i', m.close_view, f, {})
   return buf, win, closer
 end
 
+--
+-- test_mask()
+-- test(true)
+-- test2(false)
+-- test_term(true)
+-- multigrid
+-- floating_term({ cmd = 'lazygit', border = 'single', external = true })
+-- floating_term({ cmd = 'pwd', border = 'single', external = false, autoclose = false })
+-- floating_term({ cmd = 'lazygit', border = 'single', external = false })
+-- term({ cmd = 'fish', border = 'single', external = false })
 local function test(prompt)
   local b, w, c = floating_buf({
     win_width = 30,
@@ -294,76 +326,18 @@ local function test_mask()
   local b, w, c = floating_buf_mask()
 end
 
-local input_ctx = {
-  opts = {},
-  on_confirm = function(text) end,
-  on_concel = function(...) end,
-}
-
-local function input_callback()
-  log(input_ctx)
-  local new_text = vim.trim(vim.fn.getline('.'):sub(#input_ctx.opts.prompt + 1, -1))
-  vim.cmd([[stopinsert]])
-  vim.cmd([[bd!]])
-  if #new_text == 0 or new_text == input_ctx.opts.default then
-    return
-  end
-  input_ctx.on_confirm(new_text)
-end
-
-local function input(opts, on_confirm)
-  local bufnr = vim.api.nvim_create_buf(false, true)
-
-  input_ctx.opts = opts
-  local prompt = opts.prompt
-  local placeholder = opts.default
-  input_ctx.on_confirm = on_confirm
-  vim.api.nvim_buf_set_option(bufnr, 'buftype', 'prompt')
-  vim.api.nvim_buf_set_option(bufnr, 'bufhidden', 'wipe')
-  vim.api.nvim_buf_add_highlight(bufnr, -1, 'NGPreviewTitle', 0, 0, #prompt)
-  vim.fn.prompt_setprompt(bufnr, prompt)
-  local width = #placeholder + #prompt + 10
-  local winnr = vim.api.nvim_open_win(bufnr, true, {
-    relative = 'cursor',
-    width = width,
-    height = 1,
-    row = -3,
-    col = 1,
-    style = 'minimal',
-    border = 'single',
-  })
-  vim.api.nvim_win_set_option(winnr, 'winhl', 'Normal:Floating')
-  vim.api.nvim_buf_set_option(bufnr, 'filetype', 'guihua')
-  utils.map('n', '<ESC>', '<cmd>bd!<CR>', { silent = true, buffer = true })
-  utils.map(
-    { 'n', 'i' },
-    '<CR>',
-    "<cmd>lua require('guihua.floating').input_callback()<CR>",
-    { silent = true, buffer = true }
-  )
-  utils.map({ 'n', 'i' }, '<BS>', [[<ESC>"_cl]], { silent = true, buffer = true })
-
-  vim.cmd(string.format('normal i%s', placeholder))
-end
-
--- input({ prompt = 'replace: ', placeholder = 'old' }, function(text)
---   print('replace old' .. 'with: ' .. text)
--- end)
-
--- test_mask()
--- test(true)
--- test2(false)
--- test_term(true)
--- multigrid
--- floating_term({cmd = 'lazygit', border = 'single', external = true})
--- floating_term({ cmd = 'lazygit', border = 'single', external = false })
--- term({ cmd = 'lazygit', border = 'single', external = false })
-
 return {
   floating_buf = floating_buf,
   floating_term = floating_term,
   floating_buf_mask = floating_buf_mask,
-  input = input,
-  input_callback = input_callback,
+  input = function(o, confirm, change)
+    print('please use gui.input')
+    return require('guihua.gui').input(o, confirm, change)
+  end,
+  input_callback = function()
+    print('please use gui.input_callback')
+    return require('guihua.gui').input_callback()
+  end,
   gui_term = term,
+  close = close_float_terminal,
 }

@@ -82,8 +82,22 @@ function TextViewCtrl:on_load(opts) -- location, width, pos_x, pos_y
     print('error invalid range')
     return
   end
-  log(bufnr, range, uri)
-  local contents = api.nvim_buf_get_lines(bufnr, range.start.line, range['end'].line, false)
+  log(bufnr, range.start.line, uri)
+  local s = range.start.line
+  local e = range['end'].line
+  if e == s then
+    if s < 2 then
+      s = 0
+    else
+      s = s - 2
+    end
+    e = math.max(e + 2, s + opts.rect.height)
+
+    log('not going to show 1 line range:', s, e)
+  end
+  range.start.line = s
+  range['end'].line = e
+  local contents = api.nvim_buf_get_lines(bufnr, s, e, false)
   local lines = #contents
   local syntax = opts.syntax
   if syntax == nil or #syntax < 1 then
@@ -100,7 +114,7 @@ end
 -- call from event
 -- get floatwin bufnr, get content, get file range and write to file range
 function TextViewCtrl:on_save()
-  local txtbufnr = TextViewCtrl._viewctlobject.bufnr
+  local txtbufnr = TextViewCtrl._viewctlobject.m_delegate.buf
 
   local file_info = TextViewCtrl._viewctlobject.file_info
   local contents = api.nvim_buf_get_lines(txtbufnr, 0, file_info.lines, false)
@@ -120,6 +134,9 @@ function TextViewCtrl:on_save()
   end
 
   log(bufnr, range, file_info.lines, contents)
+  if range == nil or range.start == nil or file_info == nil then
+    return
+  end
   vim.api.nvim_buf_set_lines(bufnr, range.start.line, range.start.line + file_info.lines, true, contents)
 end
 

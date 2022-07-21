@@ -28,13 +28,27 @@ function M._preview_location(opts) -- location, width, pos_x, pos_y
   if syntax == nil or #syntax < 1 then
     syntax = 'c'
   end
+  local s = display_range.start.line
+  local e = display_range['end'].line
+  if e == s then
+    if s < 2 then
+      s = 0
+    else
+      s = s - 2
+    end
+    e = s + opts.rect.height
+  end
+  display_range.start.line = s
+  display_range['end'].line = e
 
   -- trace(syntax, contents)
   local win_opts = {
+    relative = opts.relative,
+    location = opts.loc or 'offset_center',
     syntax = syntax,
     width = opts.width,
     height = display_range['end'].line - display_range.start.line + 1,
-    preview_height = opts.height or opts.preview_height,
+    preview_height = opts.height,
     pos_x = opts.offset_x,
     pos_y = opts.offset_y,
     range = opts.range,
@@ -47,15 +61,20 @@ function M._preview_location(opts) -- location, width, pos_x, pos_y
     win_opts.external = true
     win_opts.relative = nil
   end
+
   -- win_opts.items = contents
   win_opts.hl_line = opts.lnum - display_range.start.line
   if win_opts.hl_line < 0 then
     win_opts.hl_line = 1
   end
-  trace(opts.lnum, opts.range.start.line, win_opts.hl_line)
+  log(opts.lnum, opts.range.start.line, win_opts.hl_line)
   log(win_opts.uri, win_opts.syntax)
-  local w = TextView:new({
-    loc = 'offset_center',
+  local hl
+  if vim.fn.hlID('TelescopePreviewBorder') > 0 then
+    hl = 'TelescopePreviewBorder'
+  end
+  local text_view_opts = {
+    loc = win_opts.location,
     rect = {
       height = win_opts.height, -- opts.preview_heigh or 12, -- TODO 12
       width = win_opts.width,
@@ -75,7 +94,11 @@ function M._preview_location(opts) -- location, width, pos_x, pos_y
     hl_line = win_opts.hl_line,
     allow_edit = win_opts.allow_edit,
     external = win_opts.external,
-  })
+    border_hl = hl,
+  }
+
+  log(text_view_opts)
+  local w = TextView:new(text_view_opts)
   return w
 end
 
@@ -89,16 +112,8 @@ function M.preview_uri(opts) -- uri, width, line, col, offset_x, offset_y
   end
   local loc = { uri = opts.uri, range = { start = { line = line_beg } } }
 
-  local wwidth = api.nvim_get_option('columns')
-
-  local mwidth = opts.min_width or 0.3
-  local width = math.floor(wwidth * mwidth)
-  if opts.width_ratio ~= nil and opts.width_ratio > 0.3 and opts.width_ratio < 0.99 then
-    width = math.floor(wwidth * opts.width_ratio)
-  end
-  opts.width = math.min(120, width, opts.width or 120)
   -- TODO: preview height
-  loc.range['end'] = { line = opts.lnum + opts.preview_height }
+  loc.range['end'] = { line = opts.lnum + (opts.preview_height or opts.height) }
   opts.location = loc
 
   trace('uri', opts.uri, opts.lnum, opts.location.range.start.line, opts.location.range['end'].line)
@@ -107,23 +122,21 @@ end
 
 function M.new_list_view(opts)
   local items = opts.items
-  local data = opts.data or {}
+  local data = opts.data or opts.items or {}
+  log('total items:', #items, 'data: ', #data)
   opts.height_ratio = opts.height_ratio or 0.8
   opts.width_ratio = opts.width_ratio or 0.8
-  opts.preview_height_ratio = opts.preview_height_ratio or 0.5
+  opts.preview_height_ratio = opts.preview_height_ratio or 0.4
 
   local wwidth = api.nvim_get_option('columns')
+  local wheight = api.nvim_get_option('lines')
 
   local loc = 'top_center'
 
-  local mwidth = opts.min_width or 0.3
+  local mwidth = opts.width_ratio
   local width = math.floor(wwidth * mwidth)
-  if opts.width_ratio ~= nil and opts.width_ratio > 0.3 and opts.width_ratio < 0.99 then
-    width = math.floor(wwidth * opts.width_ratio)
-  end
-  width = math.min(120, width, opts.width or 120)
-  local wheight = math.floor(1 + api.nvim_get_option('lines') * (opts.height_ratio + opts.preview_height_ratio))
-  local pheight = math.max(#opts.data, math.floor(api.nvim_get_option('lines') * (opts.preview_height_ratio or 1)))
+  width = math.min(120, width)
+
   local prompt = opts.prompt or false
   if opts.rawdata then
     data = items
@@ -142,24 +155,27 @@ function M.new_list_view(opts)
     prompt = true
   end
 
-  local lheight = math.min(#data, math.floor(wheight * (opts.min_height or 0.3)))
+  local lheight = math.min(#data, math.floor(wheight * opts.height_ratio))
 
   local r, _ = top_center(lheight, width)
 
   local offset_y = r + lheight
+  local pheight = math.min(wheight - lheight - 3, math.floor(wheight * opts.preview_height_ratio))
   -- style shadow took 1 lines
   if border ~= 'none' then
     if border == 'shadow' then
       offset_y = offset_y + 1
     else
-      offset_y = offset_y + 1 -- single?
+      offset_y = offset_y + 2 -- single?
     end
   end
   -- if border is not set, this should be r+lheigh
   if prompt then
     offset_y = offset_y + 1 -- need to check this out
   end
-  local idx = require('guihua.util').fzy_idx
+
+  log(r, lheight, #data, wheight, opts.height_ratio, offset_y)
+  local _ = require('guihua.util').fzy_idx
   local transparency = opts.transparency
   if transparency == 100 then
     transparency = nil
@@ -167,6 +183,10 @@ function M.new_list_view(opts)
   local ext = opts.external or false
   if ext then
     opts.relative = nil
+  end
+  local hl
+  if vim.fn.hlID('TelescopePromptBorder') > 0 then
+    hl = 'TelescopePromptBorder'
   end
   return ListView:new({
     loc = loc,
@@ -184,6 +204,7 @@ function M.new_list_view(opts)
     data = data,
     border = border,
     external = ext,
+    border_hl = hl,
     on_confirm = opts.on_confirm or function(item, split_opts)
       log(split_opts)
       split_opts = split_opts or {}
@@ -205,7 +226,6 @@ function M.new_list_view(opts)
         width_ratio = opts.width_ratio,
         preview_lines_before = opts.preview_lines_before or 3,
         width = width,
-        height = lheight, -- this is to cal offset
         preview_height = pheight,
         lnum = item.lnum,
         col = item.col,
@@ -283,6 +303,7 @@ M.select = function(items, opts, on_choice)
 
   local divider = string.rep('─', width + 2)
   table.insert(data, 2, divider)
+  vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes('<esc>', true, false, true), 'x', true)
   log(data)
   local listview = M.new_list_view({
     items = data,
@@ -309,4 +330,6 @@ M.select = function(items, opts, on_choice)
   return listview
 end
 
+M.input = require('guihua.input').input
+M.input_callback = require('guihua.input').input_callback
 return M

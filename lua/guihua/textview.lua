@@ -44,16 +44,21 @@ function TextView:initialize(...)
 
   log('ctor TextView start:')
   trace(opts)
-  -- vim.cmd([[hi default GHTextViewDark guifg=#e0d8f4 guibg=#332e55]])
   local bg = util.bgcolor(0x050812)
-  vim.cmd([[hi default GHTextViewDark guifg=#e0d8f4  guibg=]] .. bg)
 
-  opts.bg = opts.bg or 'GHTextViewDark'
+  if vim.fn.hlexists('GuihuaTextViewDark') == 0 then
+    vim.cmd([[hi default GuihuaTextViewDark guifg=#e0d8f4  guibg=]] .. bg)
+  end
+
+  opts.bg = opts.bg or 'GuihuaTextViewDark'
 
   if opts.width or opts.height then
     opts.rect = { widht = opts.widht or 60, height = opts.height or 30 }
   end
 
+  if vim.fn.hlexists('GuihuaListHl') == 0 then
+    vim.cmd([[highlight default link GuihuaListHl PmenuSel]])
+  end
   if TextView.ActiveTextView ~= nil then
     if
       TextView.ActiveTextView.win ~= nil
@@ -80,7 +85,7 @@ function TextView:initialize(...)
           opts.hl_line = 1
         end
         log('hl buf', self.buf, 'l ', opts.hl_line)
-        TextView.static.hl_id = vim.api.nvim_buf_add_highlight(self.buf, -1, 'GHListHl', opts.hl_line - 1, 0, -1)
+        TextView.static.hl_id = vim.api.nvim_buf_add_highlight(self.buf, -1, 'GuihuaListHl', opts.hl_line - 1, 0, -1)
         TextView.static.hl_line = opts.hl_line
       end
       log('ctor TextView: end, already existed') -- , View.ActiveView)--, self)
@@ -127,8 +132,8 @@ function TextView:initialize(...)
     if opts.hl_line == 0 then
       opts.hl_line = 1
     end
-    log('buf', self.buf, 'l: ', opts.hl_line)
-    TextView.static.hl_id = vim.api.nvim_buf_add_highlight(self.buf, -1, 'GHListHl', opts.hl_line - 1, 0, -1)
+    log('buf', self.buf, 'hl_line: ', opts.hl_line)
+    TextView.static.hl_id = vim.api.nvim_buf_add_highlight(self.buf, -1, 'GuihuaListHl', opts.hl_line - 1, 0, -1)
     TextView.static.hl_line = opts.hl_line
   end
 
@@ -156,7 +161,7 @@ function TextView:on_draw(opts)
     return
   end
   local data = {}
-  if not self or not vim.api.nvim_buf_is_valid(self.buf) then
+  if not self or not self.buf or not vim.api.nvim_buf_is_valid(self.buf) then
     log('buf id invalid', self)
     return
   end
@@ -197,7 +202,7 @@ function TextView:on_draw(opts)
   -- vim.api.nvim_buf_set_option(bufnr, "readonly", true)
   vim.api.nvim_buf_set_option(bufnr, 'bufhidden', 'wipe')
   if TextView.hl_line ~= nil then
-    TextView.static.hl_id = vim.api.nvim_buf_add_highlight(self.buf, -1, 'GHListHl', TextView.hl_line - 1, 0, -1)
+    TextView.static.hl_id = vim.api.nvim_buf_add_highlight(self.buf, -1, 'GuihuaListHl', TextView.hl_line - 1, 0, -1)
   end
   -- vim.fn.setpos(".", {0, 1, 1, 0})
 

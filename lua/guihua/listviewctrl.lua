@@ -14,18 +14,18 @@ if ListViewCtrl == nil then
   ListViewCtrl = class('ListViewCtrl', ViewController)
 end
 
-local function gh_jump_to_win()
-  local currentWinnr = vim.api.nvim_get_current_win()
-  local jumpto = TextView.ActiveTextView.win
-  if jumpto == currentWinnr then
-    jumpto = ListView.Winnr
-  end
-
-  if jumpto ~= nil and vim.api.nvim_win_is_valid(jumpto) then
-    log('jump from ', currentWinnr, 'to', jumpto)
-    vim.api.nvim_set_current_win(jumpto)
-  end
-end
+-- local function gh_jump_to_win()
+--   local currentWinnr = vim.api.nvim_get_current_win()
+--   local jumpto = TextView.ActiveTextView.win
+--   if jumpto == currentWinnr then
+--     jumpto = ListView.Winnr
+--   end
+--
+--   if jumpto ~= nil and vim.api.nvim_win_is_valid(jumpto) then
+--     log('jump from ', currentWinnr, 'to', jumpto)
+--     vim.api.nvim_set_current_win(jumpto)
+--   end
+-- end
 
 function _G.gh_jump_to_list()
   if ListView == nil then
@@ -51,7 +51,7 @@ function _G.gh_jump_to_preview()
   end
 end
 
-function on_preview()
+local function on_preview()
   if TextView == nil or TextView.ActiveTextView == nil then
     return false
   end
@@ -66,13 +66,16 @@ function ListViewCtrl:initialize(delegate, ...)
   self.selected_line = 1
   --
   local opts = select(1, ...) or {}
-  -- trace("listview ctrl opts", opts)
+  trace('listview ctrl opts', opts)
   self.data = opts.data or {}
   self.preview = opts.preview or false
   self.prompt = opts.prompt
+  self.on_input_filter = opts.on_input_filter
   self.display_height = self.m_delegate.display_height or 10
   self.display_start_at = 1
-  self.on_move = opts.on_move or function(...) end
+  self.on_move = opts.on_move or function(...)
+    _ = { ... }
+  end
   self.on_confirm = opts.on_confirm
   if #self.data <= self.display_height then
     self.display_data = opts.data
@@ -90,62 +93,66 @@ function ListViewCtrl:initialize(delegate, ...)
   if delegate.buf == nil or delegate.buf == 0 then
     log('should not bind to current buffer')
   end
-  m = _GH_SETUP.maps
-  vim.api.nvim_buf_set_keymap(delegate.buf, 'n', '<C-k>', '<cmd> lua ListViewCtrl:on_prev()<CR>', {})
-  vim.api.nvim_buf_set_keymap(delegate.buf, 'i', '<C-k>', '<cmd> lua ListViewCtrl:on_prev()<CR>', {})
-  vim.api.nvim_buf_set_keymap(delegate.buf, 'n', '<C-j>', '<cmd> lua ListViewCtrl:on_next()<CR>', {})
-  vim.api.nvim_buf_set_keymap(delegate.buf, 'i', '<C-j>', '<cmd> lua ListViewCtrl:on_next()<CR>', {})
-  vim.api.nvim_buf_set_keymap(delegate.buf, 'n', '<Enter>', '<cmd> lua ListViewCtrl:on_confirm()<CR>', {})
-  vim.api.nvim_buf_set_keymap(delegate.buf, 'i', '<Enter>', '<cmd> lua ListViewCtrl:on_confirm() <CR>', {})
-  vim.api.nvim_buf_set_keymap(delegate.buf, 'n', '<C-w>j', '<cmd> lua gh_jump_to_preview()<CR>', {})
+  local m = _GH_SETUP.maps
+   --  stylua: ignore start
+   local keymaps = {
+      { mode = 'n', key = '<C-k>', cmd = function() ListViewCtrl:on_prev() end, desc = 'ListViewCtrl:on_prev()' },
+      { mode = 'i', key = '<C-k>', cmd = function() ListViewCtrl:on_prev() end, desc = 'ListViewCtrl:on_prev()' },
+      { mode = 'n', key = '<C-j>', cmd = function() ListViewCtrl:on_next() end, desc = 'ListViewCtrl:on_next()' },
+      { mode = 'i', key = '<C-j>', cmd = function() ListViewCtrl:on_next() end, desc = 'ListViewCtrl:on_next()' },
+      { mode = 'n', key = '<Enter>', cmd = function() ListViewCtrl:on_confirm() end, desc = 'ListViewCtrl:on_confirm()' },
+      { mode = 'i', key = '<Enter>', cmd = function() ListViewCtrl:on_confirm() end, desc = 'ListViewCtrl:on_confirm()' },
+      { mode = 'n', key = '<C-w>j', cmd = _G.gh_jump_to_preview, desc = 'jump to preview' },
+      { mode = 'n', key = '<Up>', cmd = function() ListViewCtrl:on_prev() end, desc = 'ListViewCtrl:on_prev()' },
+      { mode = 'n', key = '<Down>', cmd = function() ListViewCtrl:on_next() end, desc = 'ListViewCtrl:on_next()' },
+      { mode = 'i', key = '<Up>', cmd = function() ListViewCtrl:on_prev() end, desc = 'ListViewCtrl:on_prev()' },
+      { mode = 'i', key = '<Down>', cmd = function() ListViewCtrl:on_next() end, desc = 'ListViewCtrl:on_next()' },
+      { mode = 'i', key = m.pageup, cmd = function() ListViewCtrl:on_pageup() end, desc = 'ListViewCtrl:on_pageup()' },
+      { mode = 'i', key = m.pagedown, cmd = function() ListViewCtrl:on_pagedown() end,
+         desc = 'ListViewCtrl:on_pagedown()' },
+      { mode = 'i', key = '<PageUp>', cmd = function() ListViewCtrl:on_pageup() end, desc = 'ListViewCtrl:on_pageup()' },
+      { mode = 'i', key = '<PageDown>', cmd = function() ListViewCtrl:on_pagedown() end,
+         desc = 'ListViewCtrl:on_pagedown()' },
+      { mode = 'n', key = m.pageup, cmd = function() ListViewCtrl:on_pageup() end, desc = 'ListViewCtrl:on_pageup()' },
+      { mode = 'n', key = m.pagedown, cmd = function() ListViewCtrl:on_pagedown() end,
+         desc = 'ListViewCtrl:on_pagedown()' },
+      { mode = 'n', key = '<PageUp>', cmd = function() ListViewCtrl:on_pageup() end, desc = 'ListViewCtrl:on_pageup()' },
+      { mode = 'n', key = '<PageDown>', cmd = function() ListViewCtrl:on_pagedown() end,
+         desc = 'ListViewCtrl:on_pagedown()' },
+      { mode = 'n', key = m.confirm, cmd = function() ListViewCtrl:on_confirm() end, desc = 'ListViewCtrl:on_confirm()' },
+      { mode = 'n', key = m.vsplit, cmd = function() ListViewCtrl:on_confirm({ split = 'v' }) end,
+         desc = 'ListViewCtrl:on_confirm {split = v}' },
+      { mode = 'n', key = m.split, cmd = function() ListViewCtrl:on_confirm({ split = 's' }) end,
+         desc = 'ListViewCtrl:on_confirm {split = s}' },
+      { mode = 'i', key = m.confirm, cmd = function() ListViewCtrl:on_confirm() end, desc = 'ListViewCtrl:on_confirm()' },
+      { mode = 'n', key = m.close_view, cmd = function() ListViewCtrl:on_close() end, desc = 'ListViewCtrl:on_close()' },
+      { mode = 'n', key = '<C-c>', cmd = function() ListViewCtrl:on_close() end, desc = 'ListViewCtrl:on_close()' },
+      { mode = 'n', key = '<ESC>', cmd = function() ListViewCtrl:on_close() end, desc = 'ListViewCtrl:on_close()' },
+      { mode = 'i', key = '<BS>', cmd = function() ListViewCtrl:on_backspace() end, desc = 'ListViewCtrl:on_backspace()' },
+      { mode = 'i', key = '<C-W>', cmd = function() ListViewCtrl:on_backspace(true) end,
+         desc = 'ListViewCtrl:on_backspace()' },
+   }
 
-  -- vim.api.nvim_buf_set_keymap(delegate.buf, "i", "<Enter>",
-  --                             "<cmd> lua ListViewCtrl:on_search()<CR>", {})
-  vim.api.nvim_buf_set_keymap(delegate.buf, 'n', '<Up>', '<cmd> lua ListViewCtrl:on_prev()<CR>', {})
-  -- vim.api.nvim_buf_set_keymap(delegate.buf, 'n', 'k', '<cmd> lua ListViewCtrl:on_prev()<CR>', {})
-  vim.api.nvim_buf_set_keymap(delegate.buf, 'n', '<Down>', '<cmd> lua ListViewCtrl:on_next()<CR>', {})
-  -- vim.api.nvim_buf_set_keymap(delegate.buf, 'n', 'j', '<cmd> lua ListViewCtrl:on_next()<CR>', {})
-  vim.api.nvim_buf_set_keymap(delegate.buf, 'i', '<Up>', '<cmd> lua ListViewCtrl:on_prev()<CR>', {})
-  vim.api.nvim_buf_set_keymap(delegate.buf, 'i', '<Down>', '<cmd> lua ListViewCtrl:on_next()<CR>', {})
-  vim.api.nvim_buf_set_keymap(delegate.buf, 'i', m.pageup, '<cmd> lua ListViewCtrl:on_pageup()<CR>', {})
-  vim.api.nvim_buf_set_keymap(delegate.buf, 'i', m.pagedown, '<cmd> lua ListViewCtrl:on_pagedown()<CR>', {})
-  vim.api.nvim_buf_set_keymap(delegate.buf, 'i', '<PageUp>', '<cmd> lua ListViewCtrl:on_pageup()<CR>', {})
-  vim.api.nvim_buf_set_keymap(delegate.buf, 'i', '<PageDown>', '<cmd> lua ListViewCtrl:on_pagedown()<CR>', {})
-  vim.api.nvim_buf_set_keymap(delegate.buf, 'n', m.pageup, '<cmd> lua ListViewCtrl:on_pageup()<CR>', {})
-  vim.api.nvim_buf_set_keymap(delegate.buf, 'n', m.pagedown, '<cmd> lua ListViewCtrl:on_pagedown()<CR>', {})
-  vim.api.nvim_buf_set_keymap(delegate.buf, 'n', '<PageUp>', '<cmd> lua ListViewCtrl:on_pageup()<CR>', {})
-  vim.api.nvim_buf_set_keymap(delegate.buf, 'n', '<PageDown>', '<cmd> lua ListViewCtrl:on_pagedown()<CR>', {})
+   for i = 1, 9 do
+      keymaps[#keymaps + 1] = {
+         -- stylua: ignore
+         mode = 'n', key = tostring(i), cmd = function() ListViewCtrl:on_item(i) end, desc = 'list on item num' }
+   end
 
-  vim.api.nvim_buf_set_keymap(delegate.buf, 'n', m.confirm, '<cmd> lua ListViewCtrl:on_confirm()<CR>', {})
+   if vim.keymap == nil then
+      vim.notify('please use neovim 0.7 or later')
+      return
+   end
+   for _, v in ipairs(keymaps) do
+      vim.keymap.set(v.mode, v.key, v.cmd, { desc = v.desc, noremap = true, silent = true, buffer = delegate.buf })
+   end
 
-  vim.api.nvim_buf_set_keymap(delegate.buf, 'n', m.vsplit, "<cmd> lua ListViewCtrl:on_confirm({split='v'})<CR>", {})
-  vim.api.nvim_buf_set_keymap(delegate.buf, 'n', m.split, "<cmd> lua ListViewCtrl:on_confirm({split='s'})<CR>", {})
-  vim.api.nvim_buf_set_keymap(delegate.buf, 'i', m.confirm, '<cmd> lua ListViewCtrl:on_confirm()<CR>', {})
-
-  log('bind close', self.m_delegate.win, delegate.buf)
-
-  vim.api.nvim_buf_set_keymap(delegate.buf, 'n', m.close_view, '<cmd> lua ListViewCtrl:on_close() <CR>', {})
-  vim.api.nvim_buf_set_keymap(delegate.buf, 'n', '<C-c>', '<cmd> lua ListViewCtrl:on_close() <CR>', {})
-
-  vim.api.nvim_buf_set_keymap(delegate.buf, 'n', '<ESC>', '<cmd> lua ListViewCtrl:on_close() <CR>', {})
-  vim.api.nvim_buf_set_keymap(delegate.buf, 'i', '<BS>', '<cmd> lua ListViewCtrl:on_backspace() <CR>', {})
-
-  vim.api.nvim_buf_set_keymap(delegate.buf, 'i', '<C-W>', '<cmd> lua ListViewCtrl:on_backspace(true) <CR>', {})
-
-  for i = 1, 9 do
-    local cmd = string.format('<cmd> lua ListViewCtrl:on_item(%i)<CR>', i)
-    vim.api.nvim_buf_set_keymap(delegate.buf, 'n', tostring(i), cmd, {})
-    -- vim.api.nvim_buf_set_keymap(delegate.buf, 'i', tostring(i), cmd, {})
-  end
-
+  -- stylua: ignore end
   vim.cmd([[ autocmd TextChangedI,TextChanged <buffer> lua  ListViewCtrl:on_search() ]])
   vim.cmd([[ autocmd WinLeave <buffer> ++once lua  ListViewCtrl:on_leave() ]])
 
   --
   ListViewCtrl._viewctlobject = self
-  -- self:on_draw(self.display_data)
-  -- self.m_delegate:set_pos(self.selected_line)
-  -- trace("listview ctrl created ", self)
   log('listview ctrl created ')
 end
 
@@ -166,13 +173,18 @@ end
 
 function ListViewCtrl:on_next()
   local listobj = ListViewCtrl._viewctlobject
+  if listobj == nil then
+    log('failed to find ListViewObject')
+    return
+  end
 
   if listobj.selected_line == nil then
     listobj.selected_line = 1
   end
   local l = listobj.selected_line + 1
   local data_collection = listobj.data
-  if listobj.filter_applied then
+  if listobj.filter_applied == true then
+    log('filter applied')
     data_collection = listobj.filtered_data
   end
   if #data_collection == 0 then
@@ -187,13 +199,15 @@ function ListViewCtrl:on_next()
   trace('next: ', listobj.selected_line, listobj.display_start_at, listobj.display_height, l, disp_h)
 
   if l > #data_collection then
-    -- listobj.m_delegate:set_pos(disp_h) -- do not move to next
-    -- listobj.on_move(data_collection[#data_collection])
-    log('out of boundary next should show at: ', #listobj.data, 'set: l', l, 'disp_h', disp_h, listobj.display_height)
+      -- stylua: ignore
+      log(
+         'out of boundary next should show at: ',
+         #listobj.data, 'set: l', l, 'collection', #data_collection,
+         'disp_h', disp_h, listobj.display_height)
     return {}
   end
   local skipped_fn = 1
-  if data_collection[l].filename_only then
+  if data_collection[l].filename_only and not listobj.filter_applied == true then
     if l + 1 <= #data_collection then
       l = l + 1
       skipped_fn = 2
@@ -237,6 +251,7 @@ local function item_text(data_collection, idx)
   end
   return text
 end
+
 -- if list start with [i] then select the [i], otherwise return ith item
 function ListViewCtrl:on_item(i)
   if i < 1 then
@@ -306,7 +321,7 @@ function ListViewCtrl:on_prev()
   )
 
   local data_collection = listobj.data
-  if listobj.filter_applied then
+  if listobj.filter_applied == true then
     data_collection = listobj.filtered_data
   end
 
@@ -359,7 +374,7 @@ function ListViewCtrl:on_pagedown()
     listobj.selected_line = 1
   end
   local data_collection = listobj.data
-  if listobj.filter_applied then
+  if listobj.filter_applied == true then
     data_collection = listobj.filtered_data
   end
   local disp_h = listobj.display_height
@@ -404,7 +419,7 @@ function ListViewCtrl:on_pageup()
     listobj.selected_line = 1
   end
   local data_collection = listobj.data
-  if listobj.filter_applied then
+  if listobj.filter_applied == true then
     data_collection = listobj.filtered_data
   end
   local disp_h = listobj.display_height
@@ -442,7 +457,7 @@ end
 function ListViewCtrl:on_confirm(opts)
   local listobj = ListViewCtrl._viewctlobject
   local data_collection = listobj.data
-  if listobj.filter_applied then
+  if listobj.filter_applied == true then
     data_collection = listobj.filtered_data
   end
   listobj.m_delegate:close()
@@ -462,10 +477,16 @@ function ListViewCtrl:on_search()
   if listobj.m_delegate.prompt ~= true then
     return
   end
-  local fzy = require('fzy').fzy
-  if fzy == nil then
-    print('[ERR] fzy not found')
-    return
+
+  local filter = listobj.on_input_filter
+  if filter == nil then
+    filter = require('fzy').fzy
+    if filter == nil then
+      vim.notify('[ERR] fzy not found')
+      return
+    end
+  else
+    log('filter: ', listobj.on_input_filter, type(listobj.on_input_filter))
   end
 
   local listobj = ListViewCtrl._viewctlobject
@@ -490,17 +511,18 @@ function ListViewCtrl:on_search()
   listobj.search_item = filter_input_trim
 
   if #filter_input_trim == 0 or #listobj.data == nil or #listobj.data == 0 then
+    log('no filter')
     listobj.filter_applied = false
     listobj.filtered_data = vim.deepcopy(listobj.data) -- filter is not applied, clean up cache data
 
     listobj.display_data = { unpack(listobj.filtered_data, 1, listobj.display_height) }
-    listobj.filter_applied = true
     listobj.display_start_at = 1 -- reset
     listobj:on_draw(listobj.display_data)
     vim.api.nvim_buf_clear_namespace(buf, _GH_SEARCH_NS, 0, -1)
     return
   else
-    listobj.filtered_data = fzy(filter_input_trim, listobj.data)
+    log('filter applied ', filter_input_trim)
+    listobj.filtered_data = filter(filter_input_trim, listobj.data)
   end
   trace('filtered data', listobj.filtered_data)
   listobj.display_data = { unpack(listobj.filtered_data, 1, listobj.display_height) }
@@ -549,9 +571,12 @@ end
 
 function ListViewCtrl:on_close()
   log('closer listview') -- , ListViewCtrl._viewctlobject.m_delegate)
+  if ListViewCtrl._viewctlobject == nil then
+    log('closer listview', debug.traceback()) --  ListViewCtrl._viewctlobject.m_delegate)
+    return
+  end
   ListViewCtrl._viewctlobject.m_delegate.close()
 
-  --  log("closer ", ListViewCtrl)
   ListViewCtrl._viewctlobject.m_delegate:on_close()
   ListViewCtrl:on_leave(true)
   ListViewCtrl._viewctlobject = nil
@@ -569,7 +594,7 @@ function ListViewCtrl:on_leave(force)
         ListViewCtrl._viewctlobject.m_delegate.close()
       end
     end
-  end, 200)
+  end, 10)
 end
 
 function ListViewCtrl:on_data_update(data)
